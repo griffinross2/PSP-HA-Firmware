@@ -114,6 +114,8 @@
                 "format": "c",
                 "initializer_list": "c",
                 "span": "c",
-                "chrono": "c"
+                "chrono": "c",
+                "arm_math.h": "c",
+                "state_estimation.h": "c"
         }
 }
