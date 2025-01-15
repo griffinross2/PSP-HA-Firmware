@@ -1,7 +1,6 @@
 #include "timer.h"
 
 #include "FreeRTOS.h"
-#include "backup/backup.h"
 #include "stm32h7xx_hal.h"
 #include "task.h"
 
@@ -49,17 +48,6 @@ void init_timers() {
     };
     HAL_TIM_Base_Init(&tim3_handle);
     HAL_TIM_SlaveConfigSynchro(&tim3_handle, &tim3_slave_conf);
-
-#ifndef HWIL_TEST
-    // If we have a valid backed up timestamp value, set the counters to that
-    Backup* backup = backup_get_ptr();
-    if (backup->timestamp) {
-        uint64_t tim2_count = (backup->timestamp & 0xFFFFFFFF);
-        uint64_t tim3_count = (backup->timestamp >> 32);
-        __HAL_TIM_SET_COUNTER(&tim2_handle, tim2_count);
-        __HAL_TIM_SET_COUNTER(&tim3_handle, tim3_count);
-    }
-#endif
 
     // Disable timers during debug
     DBGMCU->APB1LFZ1 |= DBGMCU_APB1LFZ1_DBG_TIM2;

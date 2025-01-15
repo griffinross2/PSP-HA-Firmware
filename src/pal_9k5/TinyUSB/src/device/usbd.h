@@ -27,6 +27,7 @@
 #ifndef _TUSB_USBD_H_
 #define _TUSB_USBD_H_
 
+#include "class/msc/msc.h"
 #include "common/tusb_common.h"
 
 #ifdef __cplusplus

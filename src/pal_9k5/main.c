@@ -64,12 +64,10 @@ void task_init() {
     vTaskSuspendAll();
 
     uint32_t init_error = 0;  // Set if error occurs during initialization
-    uint32_t num_inits = 8;   // Number of inits the error code refers to
 
-    buttons_init();
     init_error |= (EXPECT_OK(storage_init(), "init storage") != STATUS_OK) << 0;
     init_error |= (EXPECT_OK(usb_init(), "init usb") != STATUS_OK) << 1;
-    init_error |= (EXPECT_OK(gps_init(), "init GPS") != STATUS_OK) << 4;
+    init_error |= (EXPECT_OK(gps_init(), "init GPS") != STATUS_OK) << 2;
 
     // Play init tune
     gpio_write(PIN_RED, GPIO_LOW);

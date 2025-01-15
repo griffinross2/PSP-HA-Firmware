@@ -23,7 +23,6 @@
  *
  */
 
-#include "nand_flash.h"
 #include "tusb.h"
 
 #if CFG_TUD_MSC

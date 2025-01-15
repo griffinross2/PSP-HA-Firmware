@@ -87,7 +87,7 @@ void task_storage(TaskHandle_t* handle_ptr) {
                 gps_frame_to_convolutional_frame(&gps_frame, &conv_frame);
                 GPSStorageFrame storage_frame;
                 gps_convolutional_frame_to_storage_frame(&conv_frame,
-                                                         &storage_frame);
+                                                         storage_frame);
 
                 // Write to NAND buffer
                 memcpy(whole_page + i * 256, storage_frame,

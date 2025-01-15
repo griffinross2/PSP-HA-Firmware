@@ -30,6 +30,8 @@ void cmd_erase_flash_chip(char *str) {
     } else {
         PAL_LOGE("Failed to erase flash chip\n");
     }
+    DELAY(2000);
+    NVIC_SystemReset();
 }
 
 // Print firmware spec command
