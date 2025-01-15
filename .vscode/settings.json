@@ -114,6 +114,8 @@
                 "format": "c",
                 "initializer_list": "c",
                 "span": "c",
-                "chrono": "c"
+                "chrono": "c",
+                "queue.h": "c",
+                "string": "c"
         }
 }

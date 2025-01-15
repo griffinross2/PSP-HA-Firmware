@@ -5,14 +5,10 @@
 
 #include "FreeRTOS.h"
 #include "Regex.h"
-#include "backup/backup.h"
-#include "button_event.h"
 #include "commands.h"
 #include "fifos.h"
 #include "gpio/gpio.h"
 #include "main.h"
-#include "rtc/rtc.h"
-#include "tasks/storage.h"
 #include "terminal/terminal.h"
 #include "timer.h"
 #include "tusb.h"
@@ -45,14 +41,7 @@ Status usb_init() {
     // Initialize terminal interface and add commands
     terminal_init();
     terminal_add_cmd(regex_help, cmd_help);
-    terminal_add_cmd(regex_set_datetime, cmd_set_datetime);
-    terminal_add_cmd(regex_get_datetime, cmd_get_datetime);
-    terminal_add_cmd(regex_print_config, cmd_print_config);
-    terminal_add_cmd(regex_invalidate_config, cmd_invalidate_config);
-    terminal_add_cmd(regex_invalidate_backup, cmd_invalidate_backup);
     terminal_add_cmd(regex_erase_flash_chip, cmd_erase_flash_chip);
-    terminal_add_cmd(regex_set_frequency, cmd_set_frequency);
-    terminal_add_cmd(regex_set_config_value, cmd_set_config_value);
     terminal_add_cmd(regex_get_firmware_spec, cmd_get_firmware_spec);
 #endif
 
@@ -65,15 +54,6 @@ int _write(int file, char *data, int len) {
         (file != STORAGE_FILENO) && (file != USB_FILENO)) {
         errno = EBADF;
         return -1;
-    }
-
-    /***************************/
-    /*       NAND Section      */
-    /***************************/
-
-    // USB_FILENO means only USB
-    if (file != USB_FILENO) {
-        storage_write_log(data, len);
     }
 
 #ifdef DEBUG

@@ -14,7 +14,7 @@ static Status ubx_cfg_valset(I2cDevice* device, Max_M10S_Layer_TypeDef layer,
                              uint8_t* value_lens, size_t num_items);
 
 Status max_m10s_init(I2cDevice* device) {
-    uint32_t gps_fix_period = 125;  // 8Hz
+    uint32_t gps_fix_period = 200;  // 5Hz
 
     uint32_t keys[] = {
         0x20110021, 0x10720002, 0x209100ba, 0x209100c9, 0x209100bf, 0x209100c4,
@@ -22,17 +22,17 @@ Status max_m10s_init(I2cDevice* device) {
         0x10310005, 0x10310021, 0x10310007, 0x10310022, 0x1031000d, 0x1031000f,
     };
     uint64_t values[] = {
-        8, 0, 0, 0, 0, 0, 0, 0, gps_fix_period, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+        3, 0, 0, 0, 0, 0, 0, 0, gps_fix_period, 1, 1, 1, 1, 1, 1, 1, 0, 1,
     };
     uint8_t value_lens[] = {
         1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     };
     if (ubx_cfg_valset(device, MAX_M10S_LAYER_SET_RAM, keys, values, value_lens,
                        9) == STATUS_OK) {
-        PAL_LOGI("Set nav mode to airborne <4G\n");
-        PAL_LOGI("Disabled NMEA on I2C\n");
-        PAL_LOGI("Navigation measurement rate set to 8 Hz\n");
-        PAL_LOGI("Enabled GPS, GAL, BeiDou, and SBAS\n");
+        printf("Set nav mode to pedestrian\n");
+        printf("Disabled NMEA on I2C\n");
+        printf("Navigation measurement rate set to 5 Hz\n");
+        printf("Enabled GPS, GAL, BeiDou, and SBAS\n");
     } else {
         return STATUS_ERROR;
     }

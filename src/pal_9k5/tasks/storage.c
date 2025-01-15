@@ -2,257 +2,49 @@
 
 #include <sys/types.h>
 
-#include "Regex.h"
-#include "backup/backup.h"
-#include "buttons.h"
+#include "coding/convolutional.h"
 #include "fifos.h"
+#include "gpio/gpio.h"
 #include "main.h"
-#include "nand_flash.h"
-#include "pb_create.h"
-#include "rtc/rtc.h"
+#include "mt29f4g.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 #include "timer.h"
 
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "queue.h"
 
-/********************/
-/* STATIC VARIABLES */
-/********************/
-static BoardConfig* s_config_ptr;
-
-static uint32_t s_sensor_overflows;
-static uint32_t s_state_overflows;
 static uint32_t s_gps_overflows;
-
-static QueueHandle_t s_sensor_queue;
-static QueueHandle_t s_state_queue;
 static QueueHandle_t s_gps_queue;
 
-static QueueSetHandle_t s_queue_set;
+static int nand_pos_block = 0;
+static int nand_pos_page = 0;
 
-static bool s_pause_store = false;
-
-static char s_logfile_path[64];
-static char s_datfile_path[64];
-static char s_fslfile_path[64];
-static char s_gpsfile_path[64];
-extern int g_nand_ready;
-static FIL s_logfile;
-static FIL s_datfile;
-static FIL s_fslfile;
-static FIL s_gpsfile;
-
-static uint8_t s_header[] = FIRMWARE_SPECIFIER "\n";
-
-static uint8_t s_log_buffer[4096];
-static FIFO_t s_log_fifo = {
-    .buffer = s_log_buffer,
-    .size = 4096,
-    .circ = 0,
-    .head = 0,
-    .tail = 0,
-    .count = 0,
-};
-
-static char s_prf_buf[1024];  // 40 bytes per task
-
-/*****************/
-/* API FUNCTIONS */
-/*****************/
-static void storage_pause_event_handler() {
-    // Handle button press
-    uint32_t debounce_val = 0x55555555;
-    uint64_t start_time = MILLIS();
-
-    // Debounce the button press (with a timeout)
-    while (debounce_val != 0x0 && debounce_val != 0xFFFFFFFF) {
-        // Timeout
-        if (MILLIS() - start_time >= 100) {
-            storage_start();  // Default to keeping storage running
-            return;
-        }
-
-        GpioValue pause_val = gpio_read(PIN_PAUSE);
-        if (pause_val == GPIO_ERR) return;
-
-        debounce_val = (debounce_val << 1) | pause_val;
-        DELAY_MICROS(100);
-    }
-
-    // Decide what to do based on the button transition
-    if (debounce_val) {
-        storage_pause();
-    } else {
-        storage_start();
-    }
-}
-
-static Status storage_close_files() {
-    ASSERT_OK(nand_flash_close_file(&s_logfile), "failed to close log\n");
-    ASSERT_OK(nand_flash_close_file(&s_datfile), "failed to close sens\n");
-    ASSERT_OK(nand_flash_close_file(&s_fslfile), "failed to close state\n");
-    ASSERT_OK(nand_flash_close_file(&s_gpsfile), "failed to close gps\n");
-
-    return STATUS_OK;
-}
-
-static Status storage_open_files() {
-    // Get a list of files in the data directory
-    char** file_list = NULL;
-    size_t num_files = 0;
-    file_list = nand_flash_get_file_list(LOG_DIR, &num_files);
-
-    // Get the current date for file names
-    RTCDateTime dt = rtc_get_datetime();
-
-    int max_num = 0;
-
-    // Find the highest number in the NAND flash
-    if (file_list != NULL) {
-        // Check if any match the _YYYY-MM-DD-N+. pattern
-        Regex regex;
-        regexCompile(&regex, "_[0-9]{4}\\-[0-9]{2}\\-[0-9]{2}\\-[0-9]+\\.");
-
-        for (size_t i = 0; i < num_files; i++) {
-            Matcher match = regexMatch(&regex, file_list[i]);
-            if (match.isFound) {
-                // printf("Match: %.*s\n", (int)match.matchLength,
-                //        file_list[i] + match.foundAtIndex);
-
-                // Get all the values out of the match
-                int year = atoi(file_list[i] + match.foundAtIndex + 1);
-                int month = atoi(file_list[i] + match.foundAtIndex + 6);
-                int day = atoi(file_list[i] + match.foundAtIndex + 9);
-                int num = atoi(file_list[i] + match.foundAtIndex + 12);
-
-                // Skip if the data doesn't match
-                if (year != dt.year || month != dt.month || day != dt.day) {
-                    continue;
-                }
-
-                if (num > max_num) {
-                    max_num = num;
-                }
-            }
-        }
-    }
-
-    // Free the file list
-    nand_flash_delete_file_list(file_list, num_files);
-
-    // Create the file paths
-    sprintf(s_logfile_path, LOG_DIR "/log_%04ld-%02ld-%02ld-%d.txt", dt.year,
-            dt.month, dt.day, max_num + 1);
-    sprintf(s_datfile_path, SENSOR_DIR "/dat_%04ld-%02ld-%02ld-%d.pb3", dt.year,
-            dt.month, dt.day, max_num + 1);
-    sprintf(s_fslfile_path, STATE_DIR "/fsl_%04ld-%02ld-%02ld-%d.pb3", dt.year,
-            dt.month, dt.day, max_num + 1);
-    sprintf(s_gpsfile_path, GPS_DIR "/gps_%04ld-%02ld-%02ld-%d.pb3", dt.year,
-            dt.month, dt.day, max_num + 1);
-
-    // Open files if we are not in MTP mode
-    if (!backup_get_ptr()->flag_mtp_pressed) {
-        ASSERT_OK(nand_flash_open_file_for_write(&s_logfile, s_logfile_path),
-                  "failed to open log\n");
-        ASSERT_OK(nand_flash_open_file_for_write(&s_datfile, s_datfile_path),
-                  "failed to open sensor\n");
-        ASSERT_OK(nand_flash_open_file_for_write(&s_fslfile, s_fslfile_path),
-                  "failed to open state\n");
-        ASSERT_OK(nand_flash_open_file_for_write(&s_gpsfile, s_gpsfile_path),
-                  "failed to open gps\n");
-
-        // Write the header to each file
-        ASSERT_OK(nand_flash_write_data(&s_logfile, s_header,
-                                        strlen((char*)s_header)),
-                  "failed to write log header\n");
-        ASSERT_OK(nand_flash_write_data(&s_datfile, s_header,
-                                        strlen((char*)s_header)),
-                  "failed to write sensor header\n");
-        ASSERT_OK(nand_flash_write_data(&s_fslfile, s_header,
-                                        strlen((char*)s_header)),
-                  "failed to write state header\n");
-        ASSERT_OK(nand_flash_write_data(&s_gpsfile, s_header,
-                                        strlen((char*)s_header)),
-                  "failed to write gps header\n");
-    }
-
-    return STATUS_OK;
-}
+Status find_log_end(int* block, int* page);
 
 Status storage_init() {
-    // Initialize FATFS
-    ASSERT_OK(diskio_init(NULL), "diskio init");
-    ASSERT_OK(nand_flash_init(), "nand init");
-
-    // Initialize config
-    ASSERT_OK(config_load(), "load config");
-
-    // Initialize config ptr
-    s_config_ptr = config_get_ptr();
-    if (s_config_ptr == NULL) {
-        ASSERT_OK(STATUS_STATE_ERROR, "unable to get ptr to config\n");
-    }
-
-    // Create the queues
-    s_sensor_queue = xQueueCreate(SENSOR_QUEUE_LENGTH, SENSOR_QUEUE_ITEM_SIZE);
-    s_state_queue = xQueueCreate(STATE_QUEUE_LENGTH, STATE_QUEUE_ITEM_SIZE);
+    // Create queue
     s_gps_queue = xQueueCreate(GPS_QUEUE_LENGTH, GPS_QUEUE_ITEM_SIZE);
-    s_queue_set = xQueueCreateSet(QUEUE_SET_LENGTH);
-
-    // Check that everything was successfully created
-    configASSERT(s_sensor_queue);
-    configASSERT(s_state_queue);
     configASSERT(s_gps_queue);
-    configASSERT(s_queue_set);
 
-    // Add the queues to the set
-    xQueueAddToSet(s_sensor_queue, s_queue_set);
-    xQueueAddToSet(s_state_queue, s_queue_set);
-    xQueueAddToSet(s_gps_queue, s_queue_set);
-
-    // Create the data directory
-    ASSERT_OK(nand_flash_mkdir(LOG_DIR), "failed to create log dir\n");
-    ASSERT_OK(nand_flash_mkdir(SENSOR_DIR), "failed to create sensor dir\n");
-    ASSERT_OK(nand_flash_mkdir(STATE_DIR), "failed to create state dir\n");
-    ASSERT_OK(nand_flash_mkdir(GPS_DIR), "failed to create gps dir\n");
-
-    // Open files
-    if (storage_open_files() != STATUS_OK) {
+    // Init NAND
+    if (mt29f4g_init() != STATUS_OK) {
+        PAL_LOGE("Failed to init NAND\n");
         return STATUS_ERROR;
     }
 
-    // Set the pause button handler
-    pause_event_callback = storage_pause_event_handler;
-
-    return STATUS_OK;
-}
-
-void storage_pause() { s_pause_store = true; }
-
-void storage_start() { s_pause_store = false; }
-
-Status storage_queue_sensors(const SensorFrame* sensor_frame) {
-    if (xQueueSend(s_sensor_queue, sensor_frame, 0) != pdPASS) {
-        s_sensor_overflows += 1;
-        return STATUS_BUSY;
+    // Find the end of the log
+    if (find_log_end(&nand_pos_block, &nand_pos_page) != STATUS_OK) {
+        PAL_LOGE("Failed to find log end\n");
+        return STATUS_ERROR;
     }
 
     return STATUS_OK;
 }
 
-Status storage_queue_state(const StateFrame* state_frame) {
-    if (xQueueSend(s_state_queue, state_frame, 0) != pdPASS) {
-        s_state_overflows += 1;
-        return STATUS_BUSY;
-    }
-
-    return STATUS_OK;
-}
-
-Status storage_queue_gps(const GpsFrame* gps_frame) {
+Status storage_queue_gps(const GPS_Fix_TypeDef* gps_frame) {
     if (xQueueSend(s_gps_queue, gps_frame, 0) != pdPASS) {
         s_gps_overflows += 1;
         return STATUS_BUSY;
@@ -266,133 +58,156 @@ void task_storage(TaskHandle_t* handle_ptr) {
     gpio_write(PIN_YELLOW, GPIO_LOW);
     gpio_write(PIN_GREEN, GPIO_LOW);
 
+    TickType_t last_iteration_start_tick = xTaskGetTickCount();
+
     while (1) {
-        uint64_t iteration_start_ms = MILLIS();
-        uint32_t stored_items = 0;
+        // Check if storage is full
+        if (nand_pos_block == MT29F4G_BLOCK_COUNT - 1 &&
+            nand_pos_page == MT29F4G_PAGE_PER_BLOCK - 1) {
+            PAL_LOGE("NAND storage full\n");
+            gpio_write(PIN_RED, GPIO_HIGH);
+            goto store_task_end;
+        }
 
-        // Set disk activity warning LED
-        gpio_write(PIN_YELLOW, GPIO_HIGH);
+        // Empty bursts of 16 frames from the queue
+        while (uxQueueMessagesWaiting(s_gps_queue) >= 16) {
+            // Set disk activity warning LED
+            gpio_write(PIN_YELLOW, GPIO_HIGH);
 
-        while (MILLIS() - iteration_start_ms <
-               s_config_ptr->storage_loop_period_ms) {
-            // Wait for something to be pushed to a queue
-            TickType_t max_wait_ticks =
-                pdMS_TO_TICKS(iteration_start_ms +
-                              s_config_ptr->storage_loop_period_ms - MILLIS());
-            QueueSetMemberHandle_t activated_queue =
-                xQueueSelectFromSet(s_queue_set, max_wait_ticks);
+            Status flush_status = STATUS_OK;
+            uint8_t whole_page[4096];
 
-            // Receive from the selected queue and store it
-            if (activated_queue == s_sensor_queue) {
-                SensorFrame sensor_frame;
-                xQueueReceive(s_sensor_queue, &sensor_frame, 0);
-
-                size_t sensor_buf_size;
-                pb_byte_t* sensor_buf =
-                    create_sensor_buffer(&sensor_frame, &sensor_buf_size);
-                nand_flash_write_data(&s_datfile, sensor_buf, sensor_buf_size);
-            } else if (activated_queue == s_state_queue) {
-                StateFrame state_frame;
-                xQueueReceive(s_state_queue, &state_frame, 0);
-
-                size_t state_buf_size;
-                pb_byte_t* state_buf =
-                    create_state_buffer(&state_frame, &state_buf_size);
-                nand_flash_write_data(&s_fslfile, state_buf, state_buf_size);
-            } else if (activated_queue == s_gps_queue) {
-                GpsFrame gps_frame;
+            for (int i = 0; i < 16; i++) {
+                // Receive from the queue and store it
+                GPS_Fix_TypeDef gps_frame;
                 xQueueReceive(s_gps_queue, &gps_frame, 0);
 
-                size_t gps_buf_size;
-                pb_byte_t* gps_buf =
-                    create_gps_buffer(&gps_frame, &gps_buf_size);
-                nand_flash_write_data(&s_gpsfile, gps_buf, gps_buf_size);
-            } else {
-                // Should print an error but don't want to spam log
-                // and anyway this should never happen in the first place
+                // Encode and store frame
+                GPSConvolutionalFrame conv_frame;
+                gps_frame_to_convolutional_frame(&gps_frame, &conv_frame);
+                GPSStorageFrame storage_frame;
+                gps_convolutional_frame_to_storage_frame(&conv_frame,
+                                                         &storage_frame);
+
+                // Write to NAND buffer
+                memcpy(whole_page + i * 256, storage_frame,
+                       sizeof(GPSStorageFrame));
             }
 
-            stored_items += 1;
+            // If this is a new block, first erase it
+            if (nand_pos_page == 0) {
+                if (mt29f4g_erase_blocks(nand_pos_block, nand_pos_block) !=
+                    STATUS_OK) {
+                    PAL_LOGE("Failed to erase block %d\n", nand_pos_block);
+                    flush_status = STATUS_ERROR;
+                    goto store_end;
+                }
+            }
+
+            // Write the whole page
+            if (mt29f4g_write_pages(
+                    whole_page,
+                    nand_pos_block * MT29F4G_PAGE_PER_BLOCK + nand_pos_page,
+                    1) != STATUS_OK) {
+                PAL_LOGE(
+                    "Failed to write page %d\n",
+                    nand_pos_block * MT29F4G_PAGE_PER_BLOCK + nand_pos_page);
+                flush_status = STATUS_ERROR;
+            }
+
+        store_end:
+            // Increment block position
+            nand_pos_block = (nand_pos_block + 1) % MT29F4G_PAGE_PER_BLOCK;
+
+            // Once we come back to the first block, start writing that next
+            // pages
+            if (nand_pos_block == 0) {
+                nand_pos_page = (nand_pos_page + 1) % MT29F4G_PAGE_PER_BLOCK;
+            }
+
+            gpio_write(PIN_GREEN, flush_status == STATUS_OK);
+            gpio_write(PIN_YELLOW, GPIO_LOW);
         }
 
-        // Flush everything to disk
-        Status flush_status =
-            EXPECT_OK(nand_flash_flush(&s_datfile), "Sensor flush");
-        UPDATE_STATUS(flush_status,
-                      EXPECT_OK(nand_flash_flush(&s_fslfile), "State flush"));
-        UPDATE_STATUS(flush_status,
-                      EXPECT_OK(nand_flash_flush(&s_gpsfile), "GPS flush"));
-        UPDATE_STATUS(flush_status,
-                      EXPECT_OK(nand_flash_flush(&s_logfile), "Log flush"));
-
-        gpio_write(PIN_GREEN, flush_status == STATUS_OK);
-        gpio_write(PIN_YELLOW, GPIO_LOW);
-
-        // Check for and log any queue overflows
-        if (s_sensor_overflows) {
-            PAL_LOGW("%lu overflows in sensor queue\n", s_sensor_overflows);
-            s_sensor_overflows = 0;
-        }
-        if (s_state_overflows) {
-            PAL_LOGW("%lu overflows in state queue\n", s_state_overflows);
-            s_state_overflows = 0;
-        }
         if (s_gps_overflows) {
             PAL_LOGW("%lu overflows in gps queue\n", s_gps_overflows);
             s_gps_overflows = 0;
         }
 
-        // Check if the pause flag is set
-        if (s_pause_store) {
-            // Gather and dump stats
-            vTaskGetRunTimeStats(s_prf_buf);
-            PAL_LOGI("Profiling stats:\n%s\n", s_prf_buf);
-
-            // Unmount filesystem
-            EXPECT_OK(storage_close_files(), "failed to close files\n");
-            nand_flash_deinit();
-            PAL_LOGI("Finished deinit\n");
-
-            // Blink the green LED while waiting
-            while (s_pause_store) {
-                gpio_write(PIN_GREEN, GPIO_HIGH);
-                DELAY(500);
-                gpio_write(PIN_GREEN, GPIO_LOW);
-                DELAY(500);
-            }
-
-            // Remount filesystem
-            PAL_LOGI("Starting reinit\n");
-            nand_flash_reinit();
-
-            // Open new files
-            EXPECT_OK(storage_open_files(), "failed to open new files\n");
-        }
+    store_task_end:
+        // Delay until next time
+        vTaskDelayUntil(&last_iteration_start_tick, STORAGE_INTERVAL_MS);
     }
 }
 
-Status storage_write_log(const char* log, size_t size) {
-    // Not ready yet, queue the log
-    if (!g_nand_ready) {
-        fifo_enqueuen(&s_log_fifo, (uint8_t*)log, size);
-        return STATUS_OK;
-    }
+Status find_log_end(int* block, int* page) {
+    // Nested binary search to the end of the log
+    int block_start = 0;
+    int page_start = 0;
+    int block_end = MT29F4G_BLOCK_COUNT - 1;
+    int page_end = MT29F4G_PAGE_PER_BLOCK - 1;
+    *block = block_end / 2;
+    *page = page_end / 2;
 
-    // Write the queued log to the NAND flash
-    if (s_log_fifo.count > 0) {
-        uint8_t* buf = malloc(s_log_fifo.count);
-        int n_read = fifo_dequeuen(&s_log_fifo, buf, s_log_fifo.count);
-        Status status =
-            nand_flash_write_data(&s_logfile, (uint8_t*)buf, n_read);
-        free(buf);
+    while (true) {
+        // Read the sync words
+        int sync_pos = 0;
+        uint8_t sync[4];
+    read_sync:
+        if (mt29f4g_read_within_page(
+                sync, block_start * MT29F4G_PAGE_PER_BLOCK + page_start,
+                sync_pos, 4) != STATUS_OK) {
+            PAL_LOGE("Failed to read page %d\n",
+                     block_start * MT29F4G_PAGE_PER_BLOCK + page_start);
+            return STATUS_ERROR;
+        } else {
+            // Check sync word
+            if (memcmp(sync, GPS_STORAGE_FRAME_SYNC, 4) == 0) {
+                // Checks out, continue the search
+                // Since we found a log, we know the start is here or higher
+                page_start = *page;
 
-        if (status != STATUS_OK) {
-            return status;
+                // If we narrowed down the page, work on the blocks now
+                if (page_start == page_end) {
+                    block_start = *block;
+                }
+
+                // If we have narrowed down both, we are done
+                if (block_start == block_end && page_start == page_end) {
+                    return STATUS_OK;
+                }
+
+                // Else, set the new position
+                *block = (block_start + block_end) / 2;
+                *page = (page_start + page_end) / 2;
+
+                // Start over
+                continue;
+            } else {
+                sync_pos += 256;
+                if (sync_pos < 4096) {
+                    // Going back gives more chances in case of bit errors in
+                    // the sync word
+                    goto read_sync;
+                }
+            }
         }
     }
 
-    // Write the new log to the NAND flash
-    Status status = nand_flash_write_data(&s_logfile, (uint8_t*)log, size);
+    // We didn't find any log, so we need to move the end down
+    page_end = *page;
 
-    return status;
+    // If we narrowed down the page, work on the blocks now
+    if (page_start == page_end) {
+        block_start = *block;
+    }
+
+    // If we have narrowed down both, we are done
+    if (block_start == block_end && page_start == page_end) {
+        return STATUS_OK;
+    }
+
+    // Else, set the new position and start over
+    *block = (block_start + block_end) / 2;
+    *page = (page_start + page_end) / 2;
 }
