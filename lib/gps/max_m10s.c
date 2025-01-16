@@ -343,7 +343,7 @@ Status max_m10s_poll_fix(I2cDevice* device, GPS_Fix_TypeDef* fix) {
 
     if (ubx_read_msg(device, message_header, message_buf, &message_len, 50) !=
         STATUS_OK) {
-        ASSERT_OK(STATUS_TIMEOUT_ERROR, "UBX msg read");
+        return STATUS_BUSY;
     }
 
     if (message_len != 92) {

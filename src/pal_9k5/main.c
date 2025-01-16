@@ -1,6 +1,6 @@
 #include "main.h"
 
-#include "board_config.h"
+#include "board.h"
 #include "clocks.h"
 #include "data.h"
 #include "gpio/gpio.h"
@@ -53,23 +53,32 @@
 /******************/
 
 /**
- * FreeRTOS init task for initializating all application-related
- * components like interfaces, program state, etc.
- *
- * After initialization, this task runs periodically to perform
- * maintenance functions and handle outside events.
+ * Entry point function.
  */
-void task_init() {
-    // Suspend all tasks until initialization is complete
-    vTaskSuspendAll();
+int main(void) {
+    // Perform critical bare-metal initialization
+    HAL_Init();
+    SystemClock_Config();
+    init_timers();
+    DELAY(2);
 
+    // Light all LEDs to indicate initialization
+    gpio_write(PIN_RED, GPIO_HIGH);
+    gpio_write(PIN_YELLOW, GPIO_HIGH);
+    gpio_write(PIN_GREEN, GPIO_HIGH);
+    gpio_write(PIN_BLUE, GPIO_HIGH);
+
+    // Pullup gps reset
+    gpio_write(PIN_GPS_RST, GPIO_HIGH);
+
+    // Launch FreeRTOS kernel and init
     uint32_t init_error = 0;  // Set if error occurs during initialization
 
     init_error |= (EXPECT_OK(storage_init(), "init storage") != STATUS_OK) << 0;
     init_error |= (EXPECT_OK(usb_init(), "init usb") != STATUS_OK) << 1;
     init_error |= (EXPECT_OK(gps_init(), "init GPS") != STATUS_OK) << 2;
 
-    // Play init tune
+    // Init finished, turn off all LEDs
     gpio_write(PIN_RED, GPIO_LOW);
     gpio_write(PIN_YELLOW, GPIO_LOW);
     gpio_write(PIN_GREEN, GPIO_LOW);
@@ -83,43 +92,11 @@ void task_init() {
 
     PAL_LOGI("Initialization complete\n");
 
-        // Start tasks if we are in normal mode
+    // Start tasks if we are in normal mode
     PAL_LOGI("Launching flight tasks\n");
-    TASK_CREATE(task_gps, +5, 2048);
-    TASK_CREATE(task_storage, +4, 16384);
-    TASK_CREATE(task_usb, +1, 4096);
-
-#ifdef DEBUG_MEMORY_USAGE
-    TASK_CREATE(debug_memory_usage_task, +1, 512);
-#endif
-
-    xTaskResumeAll();
-
-    while (1) {
-        vTaskDelay(portMAX_DELAY);
-    }
-}
-
-/**
- * Entry point function.
- */
-int main(void) {
-    // Perform critical bare-metal initialization
-    HAL_Init();
-    SystemClock_Config();
-    init_timers();
-
-    // Light all LEDs to indicate initialization
-    gpio_write(PIN_RED, GPIO_HIGH);
-    gpio_write(PIN_YELLOW, GPIO_HIGH);
-    gpio_write(PIN_GREEN, GPIO_HIGH);
-    gpio_write(PIN_BLUE, GPIO_HIGH);
-
-    // Set pull-down on the button pins
-    gpio_mode(PIN_PAUSE, GPIO_INPUT_PULLDOWN);
-
-    // Launch FreeRTOS kernel and init task
-    TASK_CREATE(task_init, -1, 16383);
+    TASK_CREATE(task_gps, +4, 4096);
+    TASK_CREATE(task_storage, +5, 32768);
+    TASK_CREATE(task_usb, +1, 8192);
 
     PAL_LOGI("Starting scheduler\n");
 
