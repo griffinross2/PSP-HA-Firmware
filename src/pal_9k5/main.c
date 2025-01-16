@@ -95,14 +95,9 @@ void task_init() {
 
     xTaskResumeAll();
 
-    // After starting tasks, set the transmit frequency
-    // if (pspcom_change_frequency(config_get_ptr()->telemetry_frequency_hz) !=
-    //     STATUS_OK) {
-    //     PAL_LOGE("Failed to set telemetry frequency!\n");
-    // } else {
-    //     PAL_LOGI("Telemetry frequency set to %.3f MHz!\n",
-    //              config_get_ptr()->telemetry_frequency_hz / 1e6);
-    // }
+    while (1) {
+        vTaskDelay(portMAX_DELAY);
+    }
 }
 
 /**
@@ -124,7 +119,7 @@ int main(void) {
     gpio_mode(PIN_PAUSE, GPIO_INPUT_PULLDOWN);
 
     // Launch FreeRTOS kernel and init task
-    TASK_CREATE(task_init, -1, 8192);
+    TASK_CREATE(task_init, -1, 16383);
 
     PAL_LOGI("Starting scheduler\n");
 

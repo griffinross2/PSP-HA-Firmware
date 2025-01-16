@@ -77,7 +77,7 @@ uint8_t const *tud_descriptor_device_cb(void) {
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 
-enum { ITF_NUM_CDC = 0, ITF_NUM_CDC_DATA, ITF_NUM_MSC, ITF_NUM_TOTAL };
+enum { ITF_NUM_CDC = 0, ITF_NUM_CDC_DATA, ITF_NUM_TOTAL };
 
 #if CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || \
     CFG_TUSB_MCU == OPT_MCU_LPC177X_8X || CFG_TUSB_MCU == OPT_MCU_LPC40XX
@@ -122,8 +122,7 @@ enum { ITF_NUM_CDC = 0, ITF_NUM_CDC_DATA, ITF_NUM_MSC, ITF_NUM_TOTAL };
 
 #endif
 
-#define CONFIG_TOTAL_LEN \
-    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
 
 uint8_t const desc_fs_configuration[] = {
     // Config number, interface count, string index, total length, attribute,
@@ -134,9 +133,6 @@ uint8_t const desc_fs_configuration[] = {
     // address (out, in) and size.
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT,
                        EPNUM_CDC_IN, 64),
-
-    // Interface number, string index, EP Out & EP In address, EP size
-    TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, 5, EPNUM_MSC_OUT, EPNUM_MSC_IN, 64),
 };
 
 #if TUD_OPT_HIGH_SPEED
@@ -241,7 +237,6 @@ char const *string_desc_arr[] = {
     "PAL 9000 Ver. 5",           // 2: Product
     NULL,                        // 3: Serials will use unique ID if possible
     "PAL 9000 CDC",              // 4: CDC Interface
-    "PAL 9000 MSC",              // 5: MSC Interface
 };
 
 static uint16_t _desc_str[32 + 1];

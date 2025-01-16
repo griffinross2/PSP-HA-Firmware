@@ -192,22 +192,22 @@ Status find_log_end(int* block, int* page) {
                 }
             }
         }
+
+        // We didn't find any log, so we need to move the end down
+        page_end = *page;
+
+        // If we narrowed down the page, work on the blocks now
+        if (page_start == page_end) {
+            block_end = *block;
+        }
+
+        // If we have narrowed down both, we are done
+        if (block_start == block_end && page_start == page_end) {
+            return STATUS_OK;
+        }
+
+        // Else, set the new position and start over
+        *block = (block_start + block_end) / 2;
+        *page = (page_start + page_end) / 2;
     }
-
-    // We didn't find any log, so we need to move the end down
-    page_end = *page;
-
-    // If we narrowed down the page, work on the blocks now
-    if (page_start == page_end) {
-        block_start = *block;
-    }
-
-    // If we have narrowed down both, we are done
-    if (block_start == block_end && page_start == page_end) {
-        return STATUS_OK;
-    }
-
-    // Else, set the new position and start over
-    *block = (block_start + block_end) / 2;
-    *page = (page_start + page_end) / 2;
 }
