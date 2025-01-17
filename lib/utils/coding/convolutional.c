@@ -1,6 +1,13 @@
 #include "convolutional.h"
 
+#include "stdlib.h"
 #include "string.h"
+
+#define nstates (64)
+#define ninput (200 * 8)
+#define rate (2)
+
+static uint16_t path_metric[nstates][ninput / rate + 1];
 
 uint8_t get_conv_out(uint8_t state, uint8_t input);
 uint8_t get_conv_out_2(uint8_t* state, uint8_t input);
@@ -138,12 +145,6 @@ uint8_t get_conv_out_2(uint8_t* state, uint8_t input) {
 }
 
 void viterbi_decode(uint8_t* data, uint8_t* result) {
-    static const int nstates = 64;
-    static const int ninput = 200 * 8;
-    static const int rate = 2;
-
-    uint32_t path_metric[nstates][ninput / rate + 1];
-
     // Setup initial state
     memset(path_metric, 0xFF, sizeof(path_metric));
     path_metric[0][0] = 0;
@@ -152,7 +153,7 @@ void viterbi_decode(uint8_t* data, uint8_t* result) {
     for (int j = 0; j < ninput / rate; j++) {
         for (int i = 0; i < nstates; i++) {
             // skip unaccessible states
-            if (path_metric[i][j] == 0xFFFFFFFF) continue;
+            if (path_metric[i][j] == 0xFFFF) continue;
 
             // input bit 0
             uint8_t next_state = (i >> 1);
@@ -174,7 +175,7 @@ void viterbi_decode(uint8_t* data, uint8_t* result) {
 
     // Find best ending
     int best_state = 0;
-    uint32_t best_metric = 0xFFFFFFFF;
+    uint32_t best_metric = 0xFFFF;
     for (int i = 0; i < nstates; i++) {
         if (path_metric[i][ninput / rate] < best_metric) {
             best_metric = path_metric[i][ninput / rate];

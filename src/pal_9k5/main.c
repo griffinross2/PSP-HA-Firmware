@@ -95,7 +95,7 @@ int main(void) {
     // Start tasks if we are in normal mode
     PAL_LOGI("Launching flight tasks\n");
     TASK_CREATE(task_gps, +4, 4096);
-    TASK_CREATE(task_storage, +5, 32768);
+    TASK_CREATE(task_storage, +4, 32768);
     TASK_CREATE(task_usb, +1, 8192);
 
     PAL_LOGI("Starting scheduler\n");

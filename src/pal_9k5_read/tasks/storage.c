@@ -245,18 +245,55 @@ Status find_log_end(int* block, int* page) {
 }
 
 void storage_dump() {
-    DELAY(5000);
-    for (int block = 0; block < MT29F4G_BLOCK_COUNT; block++) {
-        for (int page = 0; page < MT29F4G_PAGE_PER_BLOCK; page++) {
+    DELAY(10000);
+    gpio_write(PIN_RED, GPIO_LOW);
+    gpio_write(PIN_YELLOW, GPIO_LOW);
+    gpio_write(PIN_GREEN, GPIO_LOW);
+    gpio_write(PIN_BLUE, GPIO_LOW);
+    // GPS_Fix_TypeDef fix;
+
+    // printf(
+    //     "year, month, day, hour, min, sec, nano, date_valid, time_valid, "
+    //     "time_resolved, fix_type, fix_valid, diff_used, psm_state, "
+    //     "hdg_veh_valid, carrier_phase, num_sats, lon, lat, height,
+    //     height_msl, " "accuracy_horiz, accuracy_vertical, vel_north,
+    //     vel_east, vel_down, " "ground_speed, hdg, accuracy_speed,
+    //     accuracy_hdg, invalid_llh\n");
+
+    for (int page = 0; page < MT29F4G_PAGE_PER_BLOCK; page++) {
+        for (int block = 0; block < MT29F4G_BLOCK_COUNT; block++) {
             uint8_t buffer[4096];
             if (mt29f4g_read_pages(buffer,
                                    block * MT29F4G_PAGE_PER_BLOCK + page,
                                    1) != STATUS_OK) {
-                memset(buffer, 0, 4096);
+                continue;
             }
 
-            for (int i = 0; i < 4096; i++) {
-                printf("%c", (char)buffer[i]);
+            for (int i = 0; i < 4096; i += 256) {
+                // if (gps_storage_frame_to_fix(buffer + i, &fix) == 0) {
+                //     printf(
+                //         "%04d,%02d,%02d,%02d,%02d,%02d,%d,"  // Time
+                //         "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"     // Flags
+                //         "%.10f,%.10f,%.4f,%.4f,"             // Position
+                //         "%.4f,%.4f,"                         // Accuracy
+                //         "%.4f,%.4f,%.4f,%.4f,"               // Speeds
+                //         "%f,%f,%f,%d\n",                     // Misc
+                //         fix.year, fix.month, fix.day, fix.hour, fix.min,
+                //         fix.sec, fix.nano, fix.date_valid, fix.time_valid,
+                //         fix.time_resolved, fix.fix_type, fix.fix_valid,
+                //         fix.diff_used, fix.psm_state, fix.hdg_veh_valid,
+                //         fix.carrier_phase, fix.num_sats, fix.lon, fix.lat,
+                //         fix.height, fix.height_msl, fix.accuracy_horiz,
+                //         fix.accuracy_vertical, fix.vel_north, fix.vel_east,
+                //         fix.vel_down, fix.ground_speed, fix.hdg,
+                //         fix.accuracy_speed, fix.accuracy_hdg,
+                //         fix.invalid_llh);
+                // }
+                for (int j = 0; j < 204; j++) {
+                    printf("%c", buffer[i + j]);
+                    fflush(stdout);
+                    DELAY_MICROS(10);
+                }
             }
         }
     }

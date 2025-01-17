@@ -78,7 +78,7 @@ int main(void) {
     init_error |= (EXPECT_OK(usb_init(), "init usb") != STATUS_OK) << 1;
 
     TASK_CREATE(task_usb, +2, 8192);
-    TASK_CREATE(storage_dump, +1, 8192);
+    TASK_CREATE(storage_dump, +1, 32768);
 
     PAL_LOGI("Starting scheduler\n");
 

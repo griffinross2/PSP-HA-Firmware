@@ -1,7 +1,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-#define TERMINAL_MAX_CMDS 32
+#define TERMINAL_MAX_CMDS 4
 
 void terminal_init();
 

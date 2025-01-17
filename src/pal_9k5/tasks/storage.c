@@ -218,7 +218,10 @@ Status find_log_end(int* block, int* page) {
             if ((search_ret = search_page(*block * MT29F4G_PAGE_PER_BLOCK +
                                           *page)) != 0) {
                 if (search_ret < 0) return STATUS_ERROR;
-                if (search_ret > 0) break;
+                if (search_ret > 0) {
+                    // Found a blank spot here
+                    return STATUS_OK;
+                }
             } else {
                 // Found a log, move block ahead
                 *block = (*block + 1) % MT29F4G_BLOCK_COUNT;

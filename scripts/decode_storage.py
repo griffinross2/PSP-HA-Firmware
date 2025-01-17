@@ -92,15 +92,11 @@ def get_conv_out(state, input):
     return result
 
 def gps_storage_frame_to_fix(storage_frame):
-    # First check the sync word
-    if list(storage_frame[0:4]) != GPS_STORAGE_FRAME_SYNC:
-        return -1
-
     # Deinterleave (2B x 100B)
     deinterleaved_data = [0]*200
     for i in range(2):
         for j in range(100):
-            deinterleaved_data[i + j * 2] = storage_frame[i * 100 + j + 4]
+            deinterleaved_data[i + j * 2] = storage_frame[i * 100 + j]
 
     # Expand the data out bit by bit
     encoded_data = (200 * 8) * [0]
@@ -125,13 +121,23 @@ def gps_storage_frame_to_fix(storage_frame):
 
     return result[0:80]
 
-with open("C:/temp/capture.txt", "rb") as f:
-    f.seek(36)
+with open("D:/github_repos/PSP-HA-Firmware-Griffin/putty.log", "rb") as f:
+    header_buf = bytes([0,0,0,0])
     while True:
-        data = f.read(256)
-        if not data or len(data) < 256:
+        # Find header
+        while True:
+            header_buf = header_buf[1:] + bytes([f.read(1)[0]])
+            if header_buf == bytes(GPS_STORAGE_FRAME_SYNC):
+                header_buf = bytes([0,0,0,0])
+                break
+
+        data = f.read(200)
+        if not data or len(data) < 200:
             break
         decoded = gps_storage_frame_to_fix(data)
+        if(decoded == -1):
+            continue
         result = subprocess.run(["D:/github_repos/PSP-HA-Firmware-Griffin/scripts/decode_gps.exe"], input=bytes(decoded), stdout=subprocess.PIPE)
+        print(f.tell())
         print(result.stdout.decode("utf-8"))
     f.close()
