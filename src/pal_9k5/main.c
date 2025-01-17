@@ -60,6 +60,11 @@ int main(void) {
     HAL_Init();
     SystemClock_Config();
     init_timers();
+
+    // Start charging the backup battery
+    PWR->CR3 &= ~PWR_CR3_VBRS;
+    PWR->CR3 |= PWR_CR3_VBE;
+
     DELAY(2);
 
     // Light all LEDs to indicate initialization
